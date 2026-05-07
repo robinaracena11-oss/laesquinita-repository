@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>La Esquinita | Gourmet App</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -11,9 +12,10 @@
     <!-- Firebase SDK -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, onSnapshot, doc, getDoc, updateDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
+        // Configuración dinámica provista por el entorno
         const firebaseConfig = JSON.parse(__firebase_config);
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
@@ -24,38 +26,40 @@
         window.appId = appId;
 
         async function init() {
-            await signInAnonymously(auth);
-            
-            // Lógica de ruteo: ¿Es admin o cliente?
-            const urlParams = new URLSearchParams(window.location.search);
-            const view = urlParams.get('view');
+            try {
+                await signInAnonymously(auth);
+                
+                // Lógica de ruteo: ¿Es admin o cliente?
+                const urlParams = new URLSearchParams(window.location.search);
+                const view = urlParams.get('view');
 
-            if (view === 'admin') {
-                window.currentView = 'admin';
-                document.getElementById('pin-screen').classList.remove('hidden');
-                listenToOrders();
-            } else {
-                window.currentView = 'customer';
-                document.getElementById('customer-view').classList.remove('hidden');
-                document.getElementById('customer-tabs').classList.remove('hidden');
-                renderUI();
-                checkActiveOrder();
+                if (view === 'admin') {
+                    window.currentView = 'admin';
+                    document.getElementById('pin-screen').classList.remove('hidden');
+                    listenToOrders();
+                } else {
+                    window.currentView = 'customer';
+                    document.getElementById('customer-view').classList.remove('hidden');
+                    document.getElementById('customer-tabs').classList.remove('hidden');
+                    renderUI();
+                    checkActiveOrder();
+                }
+            } catch (error) {
+                console.error("Error de inicialización:", error);
             }
         }
         init();
 
         window.saveOrderToCloud = async (orderData) => {
-            try {
-                const ordersCol = collection(db, 'artifacts', appId, 'public', 'data', 'orders');
-                const docRef = await addDoc(ordersCol, {
-                    ...orderData,
-                    status: 'Pendiente',
-                    createdAt: serverTimestamp()
-                });
-                localStorage.setItem('activeOrderId', docRef.id);
-                listenToCurrentOrder(docRef.id);
-                return docRef.id;
-            } catch (e) { console.error("Error nube:", e); }
+            const ordersCol = collection(db, 'artifacts', appId, 'public', 'data', 'orders');
+            const docRef = await addDoc(ordersCol, {
+                ...orderData,
+                status: 'Pendiente',
+                createdAt: serverTimestamp()
+            });
+            localStorage.setItem('activeOrderId', docRef.id);
+            listenToCurrentOrder(docRef.id);
+            return docRef.id;
         };
 
         function listenToOrders() {
@@ -66,7 +70,7 @@
                 orders.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
                 window.ordersList = orders;
                 if (window.currentView === 'admin' && window.isAdminAuthorized) renderAdminDashboard();
-            });
+            }, (err) => console.error("Error en tiempo real:", err));
         }
 
         function listenToCurrentOrder(orderId) {
@@ -94,7 +98,7 @@
         };
 
         window.deleteOrder = async (orderId) => {
-            if(confirm("¿Eliminar definitivamente?")) {
+            if(confirm("¿Deseas eliminar este registro permanentemente?")) {
                 const orderDoc = doc(db, 'artifacts', appId, 'public', 'data', 'orders', orderId);
                 await deleteDoc(orderDoc);
             }
@@ -108,10 +112,11 @@
             --safe-top: env(safe-area-inset-top);
             --safe-bottom: env(safe-area-inset-bottom);
         }
-        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #fcfcfc; -webkit-tap-highlight-color: transparent; }
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #fcfcfc; -webkit-tap-highlight-color: transparent; user-select: none; }
         h1, h2, h3 { font-family: 'Playfair Display', serif; }
         .mono { font-family: 'JetBrains Mono', monospace; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
+        
         .app-container { padding-top: calc(1rem + var(--safe-top)); padding-bottom: calc(5rem + var(--safe-bottom)); }
         
         .tab-bar {
@@ -122,7 +127,7 @@
             display: flex; justify-content: space-around; align-items: center; z-index: 100;
         }
 
-        .tab-item { display: flex; flex-direction: column; align-items: center; gap: 4px; color: #94a3b8; transition: all 0.2s; }
+        .tab-item { display: flex; flex-direction: column; align-items: center; gap: 4px; color: #94a3b8; transition: all 0.2s; background: none; border: none; }
         .tab-item.active { color: var(--brand-amber); }
 
         .sheet { position: fixed; inset: 0; z-index: 200; visibility: hidden; pointer-events: none; }
@@ -140,12 +145,13 @@
 
         .btn-press:active { transform: scale(0.95); }
         .card-shadow { box-shadow: 0 4px 20px -5px rgba(15, 23, 42, 0.05); }
-        .cat-pill.active { background-color: var(--brand-dark); color: white; transform: scale(1.02); }
 
-        /* Estilos de Pasos */
+        /* Progress Stepper */
         .step-line { position: absolute; left: 16px; top: 0; bottom: 0; width: 2px; background: #f1f5f9; z-index: 0; }
-        .step-circle { width: 34px; height: 34px; border-radius: 50%; display: flex; items-center: center; justify-content: center; z-index: 10; position: relative; transition: all 0.5s; font-size: 14px; }
-        
+        .step-circle { width: 34px; height: 34px; border-radius: 50%; display: flex; items-center: center; justify-content: center; z-index: 10; position: relative; transition: all 0.5s; font-size: 14px; background: #f1f5f9; color: #94a3b8; }
+        .step-circle.active { background: var(--brand-amber); color: white; box-shadow: 0 0 15px rgba(217, 119, 6, 0.3); }
+        .step-circle.done { background: #10b981; color: white; }
+
         .order-card { border-left: 4px solid #e2e8f0; transition: all 0.3s; }
         .order-card.Pendiente { border-left-color: #ef4444; }
         .order-card.Preparando { border-left-color: #f59e0b; }
@@ -153,19 +159,22 @@
 
         .pin-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #e2e8f0; transition: all 0.2s; }
         .pin-dot.filled { background: var(--brand-amber); border-color: var(--brand-amber); transform: scale(1.2); }
+
+        .user-input { width: 100%; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 1rem; padding: 0.75rem 1rem; font-size: 13px; font-weight: 600; outline: none; transition: border 0.2s; }
+        .user-input:focus { border-color: var(--brand-amber); }
     </style>
 </head>
 <body class="antialiased">
 
-    <!-- VISTA CLIENTE (HIDDEN BY DEFAULT) -->
+    <!-- VISTA CLIENTE -->
     <div id="customer-view" class="app-container hidden">
-        <!-- Seguimiento -->
-        <div id="order-tracking-banner" class="hidden mx-5 mb-4 p-4 bg-slate-900 rounded-[1.5rem] flex items-center justify-between shadow-lg btn-press" onclick="openTracking()">
+        <!-- Banner de Seguimiento -->
+        <div id="order-tracking-banner" class="hidden mx-5 mb-4 p-4 bg-slate-900 rounded-[1.5rem] flex items-center justify-between shadow-xl btn-press" onclick="openTracking()">
             <div class="flex items-center gap-3">
                 <div id="tracking-icon" class="w-8 h-8 bg-amber-600 rounded-full flex items-center justify-center text-white text-xs">⏳</div>
                 <div>
-                    <p class="text-white text-[10px] font-black uppercase tracking-tighter">Pedido: <span id="tracking-status-text" class="text-amber-500">Pendiente</span></p>
-                    <p class="text-slate-400 text-[8px] font-bold">Pulsa para ver más</p>
+                    <p class="text-white text-[10px] font-black uppercase tracking-tighter">Estatus del pedido: <span id="tracking-status-text" class="text-amber-500">Pendiente</span></p>
+                    <p class="text-slate-400 text-[8px] font-bold">Toca para ver el progreso en tiempo real</p>
                 </div>
             </div>
             <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"></path></svg>
@@ -173,7 +182,7 @@
 
         <header class="px-5 mb-6 flex justify-between items-center">
             <div>
-                <span class="text-[10px] font-bold text-amber-600 uppercase tracking-widest block mb-1">¡Buen provecho!</span>
+                <span class="text-[10px] font-bold text-amber-600 uppercase tracking-widest block mb-1">Cocinando Tradición</span>
                 <h1 class="text-2xl font-black tracking-tighter">La Esquinita</h1>
             </div>
             <div class="w-9 h-9 rounded-full overflow-hidden border border-slate-100 shadow-sm">
@@ -183,7 +192,7 @@
 
         <section class="mb-6 space-y-8">
             <div id="section-bestsellers">
-                <div class="px-5 mb-4"><h3 class="text-base font-black italic tracking-tight">Favoritos de Hoy</h3></div>
+                <div class="px-5 mb-4"><h3 class="text-base font-black italic tracking-tight">Especialidades</h3></div>
                 <div id="carousel-bestsellers" class="flex gap-3 overflow-x-auto px-5 no-scrollbar snap-x"></div>
             </div>
         </section>
@@ -193,18 +202,18 @@
         </div>
 
         <main class="px-5">
-            <div id="items-grid" class="grid grid-cols-2 gap-3 pb-10"></div>
+            <div id="items-grid" class="grid grid-cols-2 gap-3 pb-20"></div>
         </main>
     </div>
 
-    <!-- VISTA ADMINISTRADOR (HIDDEN BY DEFAULT) -->
+    <!-- VISTA ADMINISTRADOR -->
     <div id="admin-view" class="app-container hidden bg-slate-50 min-h-screen">
         <header class="px-6 mb-8 pt-4 flex justify-between items-end">
             <div>
-                <h2 class="text-3xl font-black italic tracking-tighter">Panel Privado</h2>
-                <p class="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Control de Pedidos</p>
+                <h2 class="text-3xl font-black italic tracking-tighter">Gestión Cocina</h2>
+                <p class="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Panel de Control</p>
             </div>
-            <button onclick="window.location.href=window.location.pathname" class="text-amber-600 text-[10px] font-black uppercase underline">Ir al Menú</button>
+            <button onclick="window.location.href=window.location.pathname" class="text-red-500 text-[10px] font-black uppercase underline">Cerrar Sesión</button>
         </header>
         <div id="admin-orders-container" class="px-6 space-y-4 pb-20"></div>
     </div>
@@ -216,20 +225,20 @@
             <span class="text-[8px] font-bold uppercase">Inicio</span>
         </button>
         <button onclick="toggleCart()" class="tab-item relative">
-            <div id="cart-icon-wrapper" class="flex flex-col items-center gap-1">
+            <div id="cart-icon-wrapper" class="flex flex-col items-center gap-1 transition-transform">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
-                <span id="cart-count" class="absolute -top-1 -right-1 bg-amber-600 text-white text-[7px] font-black h-3.5 w-3.5 flex items-center justify-center rounded-full">0</span>
+                <span id="cart-count" class="absolute -top-1 -right-1 bg-amber-600 text-white text-[7px] font-black h-3.5 w-3.5 flex items-center justify-center rounded-full shadow-sm">0</span>
                 <span class="text-[8px] font-bold uppercase">Mi Orden</span>
             </div>
         </button>
     </nav>
 
-    <!-- MODALES Y PIN -->
+    <!-- PANTALLA DE BLOQUEO PIN -->
     <div id="pin-screen" class="fixed inset-0 z-[300] bg-white hidden flex flex-col items-center justify-center p-8">
         <div class="text-center mb-10">
             <div class="w-16 h-16 bg-amber-600 text-white rounded-full flex items-center justify-center font-black text-2xl mx-auto mb-4 italic">E</div>
-            <h2 class="text-xl font-black italic">Acceso Privado</h2>
-            <p class="text-slate-400 text-xs mt-1 uppercase tracking-widest font-bold">Admin Only</p>
+            <h2 class="text-xl font-black italic">Acceso Administrador</h2>
+            <p class="text-slate-400 text-xs mt-1 uppercase tracking-widest font-bold">Ingresa tu PIN secreto</p>
         </div>
         <div class="flex gap-4 mb-12">
             <div class="pin-dot" id="dot-0"></div><div class="pin-dot" id="dot-1"></div><div class="pin-dot" id="dot-2"></div><div class="pin-dot" id="dot-3"></div>
@@ -238,40 +247,43 @@
         <button onclick="window.location.href=window.location.pathname" class="mt-12 text-slate-400 text-[10px] font-black uppercase">Volver al Menú</button>
     </div>
 
-    <!-- Modal Carrito -->
+    <!-- MODAL CARRITO -->
     <div id="cart-modal" class="sheet">
         <div class="sheet-overlay" onclick="toggleCart()"></div>
         <div class="sheet-content">
             <div class="w-10 h-1 bg-slate-200 rounded-full mx-auto mt-3 mb-2"></div>
-            <header class="px-6 py-3 border-b flex justify-between items-center"><h2 class="text-xl font-black italic">Mi Carrito</h2><button onclick="clearCart()" class="text-[10px] font-bold text-slate-400 uppercase">Borrar</button></header>
+            <header class="px-6 py-3 border-b flex justify-between items-center">
+                <h2 class="text-xl font-black italic">Tu Orden</h2>
+                <button onclick="clearCart()" class="text-[10px] font-bold text-slate-400 uppercase">Vaciar</button>
+            </header>
             <div class="flex-grow overflow-y-auto px-6 py-4 space-y-6">
                 <div id="cart-items" class="space-y-3"></div>
-                <div class="bg-slate-50 p-5 rounded-[2rem] border border-slate-100 space-y-3">
-                    <h4 class="text-[10px] font-black uppercase text-slate-400">Datos Entrega</h4>
-                    <input type="text" id="user-name" placeholder="Tu Nombre" class="user-input" oninput="saveField('name', this.value)">
-                    <input type="tel" id="user-phone" placeholder="WhatsApp" class="user-input" oninput="saveField('phone', this.value)">
-                    <textarea id="user-address" placeholder="Dirección" class="user-input h-20" oninput="saveField('address', this.value)"></textarea>
+                <div class="bg-slate-50 p-5 rounded-[2rem] border border-slate-100 space-y-4">
+                    <h4 class="text-[10px] font-black uppercase text-slate-400">Datos de Entrega</h4>
+                    <input type="text" id="user-name" placeholder="Tu Nombre Completo" class="user-input" oninput="saveField('name', this.value)">
+                    <input type="tel" id="user-phone" placeholder="WhatsApp / Teléfono" class="user-input" oninput="saveField('phone', this.value)">
+                    <textarea id="user-address" placeholder="Dirección exacta" class="user-input h-20 resize-none" oninput="saveField('address', this.value)"></textarea>
                 </div>
             </div>
-            <div class="p-6 border-t bg-white rounded-t-[2rem] pb-safe">
+            <div class="p-6 border-t bg-white rounded-t-[2rem] pb-safe shadow-xl">
                 <div class="flex justify-between items-center mb-4"><span id="final-total" class="text-2xl font-black">$0</span></div>
-                <button onclick="validateAndSubmit()" class="w-full bg-slate-900 text-white py-4 rounded-2xl font-black uppercase text-[10px] shadow-xl">Realizar Pedido</button>
+                <button onclick="validateAndSubmit()" class="w-full bg-slate-900 text-white py-4 rounded-2xl font-black uppercase text-[11px] shadow-lg btn-press">Confirmar Pedido</button>
             </div>
         </div>
     </div>
 
-    <!-- Modal Seguimiento -->
+    <!-- MODAL SEGUIMIENTO -->
     <div id="tracking-modal" class="sheet">
         <div class="sheet-overlay" onclick="closeTracking()"></div>
         <div class="sheet-content">
             <div class="w-10 h-1 bg-slate-200 rounded-full mx-auto mt-3 mb-2"></div>
-            <header class="px-8 py-6 text-center border-b"><h2 class="text-2xl font-black italic">Mi Pedido</h2></header>
-            <div class="flex-grow overflow-y-auto px-8 py-10 space-y-12">
-                <div class="flex gap-6 relative"><div class="step-line"></div><div id="step-1-icon" class="step-circle bg-slate-100">📝</div><div><h4 class="font-black text-sm italic">Pedido Recibido</h4><p class="text-slate-400 text-xs">Esperando confirmación.</p></div></div>
-                <div class="flex gap-6 relative"><div class="step-line"></div><div id="step-2-icon" class="step-circle bg-slate-100">🔥</div><div><h4 class="font-black text-sm italic">En Preparación</h4><p class="text-slate-400 text-xs">Cocinando tu antojo.</p></div></div>
-                <div class="flex gap-6 relative"><div id="step-3-icon" class="step-circle bg-slate-100">✅</div><div><h4 class="font-black text-sm italic">¡Listo!</h4><p id="step-3-desc" class="text-slate-400 text-xs">¡Ya casi lo tienes!</p></div></div>
+            <header class="px-8 py-6 text-center border-b"><h2 class="text-2xl font-black italic">Sigue tu Orden</h2></header>
+            <div class="flex-grow overflow-y-auto px-10 py-12 space-y-12">
+                <div class="flex gap-6 relative"><div class="step-line"></div><div id="step-1-icon" class="step-circle active">📝</div><div><h4 class="font-black text-sm italic">Pedido Recibido</h4><p class="text-slate-400 text-xs">Esperando validación de cocina.</p></div></div>
+                <div class="flex gap-6 relative"><div class="step-line"></div><div id="step-2-icon" class="step-circle">🔥</div><div><h4 class="font-black text-sm italic">En Preparación</h4><p class="text-slate-400 text-xs">Estamos cocinando tu antojo.</p></div></div>
+                <div class="flex gap-6 relative"><div id="step-3-icon" class="step-circle">🛵</div><div><h4 class="font-black text-sm italic">¡Listo para entrega!</h4><p id="step-3-desc" class="text-slate-400 text-xs">Tu pedido ya casi está en tus manos.</p></div></div>
             </div>
-            <div class="p-8"><button onclick="closeTracking()" class="w-full bg-slate-900 text-white py-4 rounded-2xl font-black uppercase text-[10px]">Cerrar</button></div>
+            <div class="p-8"><button onclick="closeTracking()" class="w-full bg-slate-900 text-white py-4 rounded-2xl font-black uppercase text-[10px]">Entendido</button></div>
         </div>
     </div>
 
@@ -282,7 +294,7 @@
 
         const menuData = [
             { id: 1, cat: "Desayunos", n: "Los Tres Golpes", p: 175, d: "Mangú encebollado con huevo, salami y queso frito.", img: "https://images.unsplash.com/photo-1598103442097-8b74394b95c6?w=400", best: true },
-            { id: 11, cat: "Sandwiches", n: "Pierna Ahumada", p: 175, d: "Pan baguete fresco, pierna macerada 24h.", img: "https://images.unsplash.com/photo-1521390188846-e2a3a97453a0?w=400", best: true },
+            { id: 11, cat: "Sandwiches", n: "Pierna Ahumada", p: 175, d: "Pan baguete fresco, pierna macerada 24h, pimientos.", img: "https://images.unsplash.com/photo-1521390188846-e2a3a97453a0?w=400", best: true },
             { id: 16, cat: "Sandwiches", n: "Philly Cheese Steak", p: 395, d: "Finas lascas de filete Angus con provolone.", img: "https://images.unsplash.com/photo-1550507992-eb63ffee0847?w=400", best: true },
             { id: 25, cat: "Hamburguesas", n: "Classic Bacon", p: 250, d: "Carne fresca de res con tocineta crujiente.", img: "https://images.unsplash.com/photo-1553979459-d2229ba7433b?w=400" },
             { id: 61, cat: "Pastas", n: "Blanca de Camarón", p: 550, d: "Linguini cremosa y camarones jumbo.", img: "https://images.unsplash.com/photo-1551183053-bf91a1d81141?w=400", best: true },
@@ -299,6 +311,7 @@
             const statusText = document.getElementById('tracking-status-text');
             const icon = document.getElementById('tracking-icon');
             if (!window.currentOrder) { banner.classList.add('hidden'); return; }
+            
             const status = window.currentOrder.status;
             banner.classList.remove('hidden');
             statusText.innerText = status;
@@ -306,43 +319,76 @@
             const s1 = document.getElementById('step-1-icon');
             const s2 = document.getElementById('step-2-icon');
             const s3 = document.getElementById('step-3-icon');
-            [s1, s2, s3].forEach(s => s.className = 'step-circle bg-slate-100');
 
-            if (status === 'Pendiente') { s1.className = 'step-circle bg-amber-600 text-white shadow-lg shadow-amber-200'; }
-            else if (status === 'Preparando') { s1.className='step-circle bg-green-500 text-white'; s2.className = 'step-circle bg-amber-600 text-white shadow-lg shadow-amber-200'; }
-            else if (status === 'Listo') { [s1, s2].forEach(s => s.className='step-circle bg-green-500 text-white'); s3.className = 'step-circle bg-green-600 text-white shadow-lg shadow-green-200'; }
+            [s1, s2, s3].forEach(s => s.className = 'step-circle');
+
+            if (status === 'Pendiente') { 
+                s1.className = 'step-circle active'; 
+                icon.innerText = "⏳";
+            } else if (status === 'Preparando') { 
+                s1.className = 'step-circle done'; 
+                s1.innerText = "✓";
+                s2.className = 'step-circle active';
+                icon.innerText = "🔥";
+            } else if (status === 'Listo') { 
+                [s1, s2].forEach(s => { s.className = 'step-circle done'; s.innerText = "✓"; });
+                s3.className = 'step-circle done';
+                s3.innerText = "✓";
+                icon.innerText = "✅";
+            }
         }
 
         async function validateAndSubmit() {
             const name = document.getElementById('user-name').value;
-            if (!name) return alert("Ingresa tu nombre");
+            if (!name) return alert("Por favor, ingresa tu nombre.");
             const arr = Object.values(cart);
             if (!arr.length) return;
+            
             const total = arr.reduce((acc, i) => acc + (i.p * i.qty), 0);
-            const orderData = { client: { name, phone: document.getElementById('user-phone').value, address: document.getElementById('user-address').value }, items: arr, total, type: "delivery" };
+            const orderData = { 
+                client: { 
+                    name, 
+                    phone: document.getElementById('user-phone').value, 
+                    address: document.getElementById('user-address').value 
+                }, 
+                items: arr, total, type: "delivery" 
+            };
+
             await window.saveOrderToCloud(orderData);
-            let msg = `*NUEVO PEDIDO*%0A👤: ${name.toUpperCase()}%0A💰: $${total}`;
+            let msg = `*NUEVO PEDIDO: LA ESQUINITA*%0A👤: ${name.toUpperCase()}%0A💰 TOTAL: $${total}`;
             window.open(`https://wa.me/18297847674?text=${msg}`);
-            cart = {}; updateCartUI(); toggleCart(); openTracking();
+            
+            cart = {}; 
+            updateCartUI(); 
+            toggleCart(); 
+            openTracking();
         }
 
         // --- ADMIN UI ---
         function renderAdminDashboard() {
             const container = document.getElementById('admin-orders-container');
-            if(!window.ordersList?.length) { container.innerHTML = `<p class="text-center opacity-30 mt-20 font-black uppercase text-xs">Sin Pedidos</p>`; return; }
+            if(!window.ordersList?.length) { 
+                container.innerHTML = `<div class="text-center py-20 opacity-30 uppercase font-black tracking-widest text-[9px]">Sin pedidos entrantes</div>`; 
+                return; 
+            }
             container.innerHTML = window.ordersList.map(o => `
-                <div class="order-card ${o.status} bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
-                    <div class="flex justify-between items-start mb-3">
-                        <div><h4 class="font-black text-sm italic uppercase">${o.client.name}</h4><p class="text-[9px] text-slate-400">${o.client.phone}</p></div>
-                        <span class="text-[7px] font-black px-2 py-1 rounded-lg uppercase ${o.status === 'Pendiente' ? 'bg-red-50 text-red-500' : 'bg-amber-50 text-amber-500'}">${o.status}</span>
+                <div class="order-card ${o.status} bg-white p-5 rounded-3xl shadow-sm border border-slate-100 flex flex-col gap-3">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h4 class="font-black text-sm italic uppercase leading-none mb-1">${o.client.name}</h4>
+                            <p class="text-[9px] text-slate-400 font-bold">${o.client.phone || 'S/N'}</p>
+                        </div>
+                        <span class="text-[7px] font-black px-2 py-1 rounded-lg uppercase ${o.status === 'Pendiente' ? 'bg-red-50 text-red-500' : o.status === 'Preparando' ? 'bg-amber-50 text-amber-500' : 'bg-green-50 text-green-500'}">${o.status}</span>
                     </div>
-                    <div class="space-y-1 mb-4 border-y border-slate-50 py-2">${o.items.map(i => `<p class="text-[10px] mono"><b>${i.qty}x</b> ${i.n}</p>`).join('')}</div>
-                    <div class="flex justify-between items-center">
-                        <p class="font-black text-xs">$${o.total}</p>
+                    <div class="bg-slate-50/50 p-3 rounded-xl space-y-1">
+                        ${o.items.map(i => `<p class="text-[10px] mono"><span class="font-bold text-amber-600">${i.qty}x</span> ${i.n}</p>`).join('')}
+                    </div>
+                    <div class="flex justify-between items-center pt-2">
+                        <p class="font-black text-xs text-slate-900">$${o.total}</p>
                         <div class="flex gap-2">
-                            <button onclick="updateStatus('${o.id}', 'Preparando')" class="p-2 bg-amber-50 rounded-lg">🔥</button>
-                            <button onclick="updateStatus('${o.id}', 'Listo')" class="p-2 bg-green-50 rounded-lg">✅</button>
-                            <button onclick="deleteOrder('${o.id}')" class="p-2 bg-red-50 text-red-300 rounded-lg">🗑️</button>
+                            <button onclick="updateStatus('${o.id}', 'Preparando')" class="p-2 bg-amber-50 text-amber-600 rounded-lg btn-press">🔥</button>
+                            <button onclick="updateStatus('${o.id}', 'Listo')" class="p-2 bg-green-50 text-green-600 rounded-lg btn-press">✅</button>
+                            <button onclick="deleteOrder('${o.id}')" class="p-2 bg-red-50 text-red-400 rounded-lg btn-press">🗑️</button>
                         </div>
                     </div>
                 </div>
@@ -375,7 +421,7 @@
         }
         function clearPin() { currentPin = currentPin.slice(0, -1); for(let i=0; i<4; i++) document.getElementById(`dot-${i}`).classList.toggle('filled', i < currentPin.length); }
 
-        // --- CORE UI ---
+        // --- RENDER MENU ---
         function renderUI() {
             document.getElementById('category-pills').innerHTML = cats.map(c => `
                 <button onclick="filter('${c}')" class="cat-pill shrink-0 px-5 py-2.5 rounded-xl text-[9px] font-black uppercase border border-slate-100 bg-white ${currentCat === c ? 'active' : 'text-slate-400'}">${c}</button>
@@ -387,7 +433,7 @@
         }
         function renderGrid(items) {
             document.getElementById('items-grid').innerHTML = items.map(i => `
-                <div class="bg-white rounded-2xl overflow-hidden card-shadow border border-slate-50 flex flex-col" onclick="addToCart(${i.id})">
+                <div class="bg-white rounded-2xl overflow-hidden card-shadow border border-slate-50 flex flex-col btn-press transition-all" onclick="addToCart(${i.id})">
                     <div class="h-32 relative"><img src="${i.img}" class="w-full h-full object-cover"></div>
                     <div class="p-3 flex-grow flex flex-col">
                         <h3 class="text-[10px] font-black italic uppercase line-clamp-1">${i.n}</h3>
@@ -398,8 +444,8 @@
         }
         function renderCarousels() {
             document.getElementById('carousel-bestsellers').innerHTML = menuData.filter(i => i.best).map(i => `
-                <div onclick="addToCart(${i.id})" class="snap-start shrink-0 w-40 bg-white rounded-3xl card-shadow border border-slate-50 p-3">
-                    <h4 class="font-black italic text-[9px] uppercase truncate">${i.n}</h4>
+                <div onclick="addToCart(${i.id})" class="snap-start shrink-0 w-40 bg-white rounded-3xl card-shadow border border-slate-50 p-4">
+                    <h4 class="font-black italic text-[10px] uppercase truncate">${i.n}</h4>
                     <p class="text-amber-600 font-black text-[8px] mt-1">$${i.p}</p>
                 </div>
             `).join('');
@@ -415,14 +461,15 @@
             const arr = Object.values(cart);
             document.getElementById('cart-count').innerText = arr.reduce((acc, i) => acc + i.qty, 0);
             document.getElementById('final-total').innerText = `$${arr.reduce((acc, i) => acc + (i.p * i.qty), 0)}`;
-            document.getElementById('cart-items').innerHTML = arr.length ? arr.map(i => `<div class="bg-slate-50 p-3 rounded-xl flex justify-between uppercase text-[9px] font-black"><span>${i.qty}x ${i.n}</span><span>$${i.p*i.qty}</span></div>`).join('') : `<p class="text-center py-10 opacity-20 text-[9px]">VACÍO</p>`;
+            const c = document.getElementById('cart-items');
+            c.innerHTML = arr.length ? arr.map(i => `<div class="bg-slate-50 p-3 rounded-xl flex justify-between uppercase text-[9px] font-black"><span>${i.qty}x ${i.n}</span><span>$${i.p*i.qty}</span></div>`).join('') : `<p class="text-center py-10 opacity-20 text-[9px] font-black uppercase tracking-widest">Orden vacía</p>`;
         }
         function toggleCart() { document.getElementById('cart-modal').classList.toggle('sheet-active'); }
         function openTracking() { document.getElementById('tracking-modal').classList.add('sheet-active'); }
         function closeTracking() { document.getElementById('tracking-modal').classList.remove('sheet-active'); }
         function saveField(f, v) { localStorage.setItem(`user_${f}`, v); }
         function loadUserData() { ["name", "phone", "address"].forEach(f => { const el = document.getElementById(`user-${f}`); if(el) el.value = localStorage.getItem(`user_${f}`) || ""; }); }
-        function clearCart() { if(confirm("¿Vaciar?")) { cart = {}; updateCartUI(); } }
+        function clearCart() { if(confirm("¿Vaciar orden?")) { cart = {}; updateCartUI(); } }
 
         window.onload = renderUI;
     </script>
