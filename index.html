@@ -15,7 +15,7 @@
         import { getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
-        // Configuración dinámica provista por el entorno
+        // Firebase Config
         const firebaseConfig = JSON.parse(__firebase_config);
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
@@ -29,21 +29,13 @@
             try {
                 await signInAnonymously(auth);
                 
-                // Lógica de ruteo: ¿Es admin o cliente?
-                const urlParams = new URLSearchParams(window.location.search);
-                const view = urlParams.get('view');
-
-                if (view === 'admin') {
-                    window.currentView = 'admin';
-                    document.getElementById('pin-screen').classList.remove('hidden');
-                    listenToOrders();
-                } else {
-                    window.currentView = 'customer';
-                    document.getElementById('customer-view').classList.remove('hidden');
-                    document.getElementById('customer-tabs').classList.remove('hidden');
-                    renderUI();
-                    checkActiveOrder();
-                }
+                // Mostrar vista de cliente por defecto
+                window.currentView = 'customer';
+                document.getElementById('customer-view').classList.remove('hidden');
+                
+                renderUI();
+                checkActiveOrder();
+                listenToOrders();
             } catch (error) {
                 console.error("Error de inicialización:", error);
             }
@@ -67,9 +59,10 @@
             onSnapshot(ordersCol, (snapshot) => {
                 const orders = [];
                 snapshot.forEach(doc => orders.push({ id: doc.id, ...doc.data() }));
+                // Ordenar por fecha
                 orders.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
                 window.ordersList = orders;
-                if (window.currentView === 'admin' && window.isAdminAuthorized) renderAdminDashboard();
+                if (window.currentView === 'admin') renderAdminDashboard();
             }, (err) => console.error("Error en tiempo real:", err));
         }
 
@@ -157,11 +150,11 @@
         .order-card.Preparando { border-left-color: #f59e0b; }
         .order-card.Listo { border-left-color: #10b981; }
 
-        .pin-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #e2e8f0; transition: all 0.2s; }
-        .pin-dot.filled { background: var(--brand-amber); border-color: var(--brand-amber); transform: scale(1.2); }
-
         .user-input { width: 100%; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 1rem; padding: 0.75rem 1rem; font-size: 13px; font-weight: 600; outline: none; transition: border 0.2s; }
         .user-input:focus { border-color: var(--brand-amber); }
+
+        .pin-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #e2e8f0; transition: all 0.2s; }
+        .pin-dot.filled { background: var(--brand-amber); border-color: var(--brand-amber); transform: scale(1.2); }
     </style>
 </head>
 <body class="antialiased">
@@ -173,8 +166,8 @@
             <div class="flex items-center gap-3">
                 <div id="tracking-icon" class="w-8 h-8 bg-amber-600 rounded-full flex items-center justify-center text-white text-xs">⏳</div>
                 <div>
-                    <p class="text-white text-[10px] font-black uppercase tracking-tighter">Estatus del pedido: <span id="tracking-status-text" class="text-amber-500">Pendiente</span></p>
-                    <p class="text-slate-400 text-[8px] font-bold">Toca para ver el progreso en tiempo real</p>
+                    <p class="text-white text-[10px] font-black uppercase tracking-tighter">Estatus: <span id="tracking-status-text" class="text-amber-500">Pendiente</span></p>
+                    <p class="text-slate-400 text-[8px] font-bold">Ver el progreso en tiempo real</p>
                 </div>
             </div>
             <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"></path></svg>
@@ -192,7 +185,7 @@
 
         <section class="mb-6 space-y-8">
             <div id="section-bestsellers">
-                <div class="px-5 mb-4"><h3 class="text-base font-black italic tracking-tight">Especialidades</h3></div>
+                <div class="px-5 mb-4"><h3 class="text-base font-black italic tracking-tight text-slate-800">Especialidades</h3></div>
                 <div id="carousel-bestsellers" class="flex gap-3 overflow-x-auto px-5 no-scrollbar snap-x"></div>
             </div>
         </section>
@@ -211,25 +204,29 @@
         <header class="px-6 mb-8 pt-4 flex justify-between items-end">
             <div>
                 <h2 class="text-3xl font-black italic tracking-tighter">Gestión Cocina</h2>
-                <p class="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Panel de Control</p>
+                <p class="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Panel de Control Activo</p>
             </div>
-            <button onclick="window.location.href=window.location.pathname" class="text-red-500 text-[10px] font-black uppercase underline">Cerrar Sesión</button>
+            <button onclick="logoutAdmin()" class="text-red-500 text-[10px] font-black uppercase underline">Salir</button>
         </header>
         <div id="admin-orders-container" class="px-6 space-y-4 pb-20"></div>
     </div>
 
-    <!-- BARRA NAVEGACIÓN CLIENTE -->
-    <nav class="tab-bar hidden" id="customer-tabs">
-        <button onclick="window.scrollTo({top:0, behavior:'smooth'})" class="tab-item active">
+    <!-- BARRA NAVEGACIÓN -->
+    <nav class="tab-bar" id="main-tabs">
+        <button onclick="switchView('customer')" class="tab-item active" id="tab-home">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
             <span class="text-[8px] font-bold uppercase">Inicio</span>
         </button>
-        <button onclick="toggleCart()" class="tab-item relative">
+        <button onclick="toggleCart()" class="tab-item relative" id="tab-cart">
             <div id="cart-icon-wrapper" class="flex flex-col items-center gap-1 transition-transform">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
                 <span id="cart-count" class="absolute -top-1 -right-1 bg-amber-600 text-white text-[7px] font-black h-3.5 w-3.5 flex items-center justify-center rounded-full shadow-sm">0</span>
-                <span class="text-[8px] font-bold uppercase">Mi Orden</span>
+                <span class="text-[8px] font-bold uppercase">Orden</span>
             </div>
+        </button>
+        <button onclick="tryAdminAccess()" class="tab-item" id="tab-admin">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path></svg>
+            <span class="text-[8px] font-bold uppercase">Admin</span>
         </button>
     </nav>
 
@@ -244,7 +241,7 @@
             <div class="pin-dot" id="dot-0"></div><div class="pin-dot" id="dot-1"></div><div class="pin-dot" id="dot-2"></div><div class="pin-dot" id="dot-3"></div>
         </div>
         <div class="grid grid-cols-3 gap-6 w-full max-w-xs" id="numpad"></div>
-        <button onclick="window.location.href=window.location.pathname" class="mt-12 text-slate-400 text-[10px] font-black uppercase">Volver al Menú</button>
+        <button onclick="closePinScreen()" class="mt-12 text-slate-400 text-[10px] font-black uppercase">Cancelar</button>
     </div>
 
     <!-- MODAL CARRITO -->
@@ -253,7 +250,7 @@
         <div class="sheet-content">
             <div class="w-10 h-1 bg-slate-200 rounded-full mx-auto mt-3 mb-2"></div>
             <header class="px-6 py-3 border-b flex justify-between items-center">
-                <h2 class="text-xl font-black italic">Tu Orden</h2>
+                <h2 class="text-xl font-black italic text-slate-800">Tu Orden</h2>
                 <button onclick="clearCart()" class="text-[10px] font-bold text-slate-400 uppercase">Vaciar</button>
             </header>
             <div class="flex-grow overflow-y-auto px-6 py-4 space-y-6">
@@ -261,13 +258,13 @@
                 <div class="bg-slate-50 p-5 rounded-[2rem] border border-slate-100 space-y-4">
                     <h4 class="text-[10px] font-black uppercase text-slate-400">Datos de Entrega</h4>
                     <input type="text" id="user-name" placeholder="Tu Nombre Completo" class="user-input" oninput="saveField('name', this.value)">
-                    <input type="tel" id="user-phone" placeholder="WhatsApp / Teléfono" class="user-input" oninput="saveField('phone', this.value)">
+                    <input type="tel" id="user-phone" placeholder="WhatsApp" class="user-input" oninput="saveField('phone', this.value)">
                     <textarea id="user-address" placeholder="Dirección exacta" class="user-input h-20 resize-none" oninput="saveField('address', this.value)"></textarea>
                 </div>
             </div>
             <div class="p-6 border-t bg-white rounded-t-[2rem] pb-safe shadow-xl">
-                <div class="flex justify-between items-center mb-4"><span id="final-total" class="text-2xl font-black">$0</span></div>
-                <button onclick="validateAndSubmit()" class="w-full bg-slate-900 text-white py-4 rounded-2xl font-black uppercase text-[11px] shadow-lg btn-press">Confirmar Pedido</button>
+                <div class="flex justify-between items-center mb-4"><span id="final-total" class="text-2xl font-black text-slate-900">$0</span></div>
+                <button onclick="validateAndSubmit()" class="w-full bg-slate-900 text-white py-4 rounded-2xl font-black uppercase text-[11px] shadow-lg btn-press">Realizar Pedido</button>
             </div>
         </div>
     </div>
@@ -277,11 +274,11 @@
         <div class="sheet-overlay" onclick="closeTracking()"></div>
         <div class="sheet-content">
             <div class="w-10 h-1 bg-slate-200 rounded-full mx-auto mt-3 mb-2"></div>
-            <header class="px-8 py-6 text-center border-b"><h2 class="text-2xl font-black italic">Sigue tu Orden</h2></header>
+            <header class="px-8 py-6 text-center border-b"><h2 class="text-2xl font-black italic">Mi Pedido</h2></header>
             <div class="flex-grow overflow-y-auto px-10 py-12 space-y-12">
                 <div class="flex gap-6 relative"><div class="step-line"></div><div id="step-1-icon" class="step-circle active">📝</div><div><h4 class="font-black text-sm italic">Pedido Recibido</h4><p class="text-slate-400 text-xs">Esperando validación de cocina.</p></div></div>
                 <div class="flex gap-6 relative"><div class="step-line"></div><div id="step-2-icon" class="step-circle">🔥</div><div><h4 class="font-black text-sm italic">En Preparación</h4><p class="text-slate-400 text-xs">Estamos cocinando tu antojo.</p></div></div>
-                <div class="flex gap-6 relative"><div id="step-3-icon" class="step-circle">🛵</div><div><h4 class="font-black text-sm italic">¡Listo para entrega!</h4><p id="step-3-desc" class="text-slate-400 text-xs">Tu pedido ya casi está en tus manos.</p></div></div>
+                <div class="flex gap-6 relative"><div id="step-3-icon" class="step-circle">🛵</div><div><h4 class="font-black text-sm italic">¡Listo para entrega!</h4><p id="step-3-desc" class="text-slate-400 text-xs">Tu pedido ya casi está contigo.</p></div></div>
             </div>
             <div class="p-8"><button onclick="closeTracking()" class="w-full bg-slate-900 text-white py-4 rounded-2xl font-black uppercase text-[10px]">Entendido</button></div>
         </div>
@@ -320,7 +317,10 @@
             const s2 = document.getElementById('step-2-icon');
             const s3 = document.getElementById('step-3-icon');
 
-            [s1, s2, s3].forEach(s => s.className = 'step-circle');
+            [s1, s2, s3].forEach(s => {
+                s.className = 'step-circle';
+                s.innerHTML = s.id === 'step-1-icon' ? '📝' : s.id === 'step-2-icon' ? '🔥' : '🛵';
+            });
 
             if (status === 'Pendiente') { 
                 s1.className = 'step-circle active'; 
@@ -364,19 +364,86 @@
             openTracking();
         }
 
+        // --- NAVEGACIÓN Y VISTAS ---
+        function switchView(view) {
+            window.currentView = view;
+            document.getElementById('customer-view').classList.toggle('hidden', view !== 'customer');
+            document.getElementById('admin-view').classList.toggle('hidden', view !== 'admin');
+            
+            document.querySelectorAll('.tab-item').forEach(el => el.classList.remove('active'));
+            if (view === 'customer') document.getElementById('tab-home').classList.add('active');
+            if (view === 'admin') document.getElementById('tab-admin').classList.add('active');
+
+            if (view === 'admin') renderAdminDashboard();
+        }
+
+        function tryAdminAccess() {
+            if (isAdminAuthorized) {
+                switchView('admin');
+            } else {
+                currentPin = "";
+                updatePinDots();
+                document.getElementById('pin-screen').classList.remove('hidden');
+            }
+        }
+
+        function logoutAdmin() {
+            isAdminAuthorized = false;
+            switchView('customer');
+        }
+
+        // --- PIN PAD ---
+        function renderPinPad() {
+            const pad = document.getElementById('numpad');
+            pad.innerHTML = "123456789 0⌫".split('').map(n => `
+                <button onclick="${n === '⌫' ? 'clearPin()' : n === ' ' ? '' : `pressPin('${n}')`}" class="w-16 h-16 rounded-full bg-slate-50 text-xl font-bold btn-press ${n===' ' ? 'opacity-0' : ''}">${n}</button>
+            `).join('');
+        }
+        function pressPin(n) {
+            if(currentPin.length < 4) {
+                currentPin += n;
+                updatePinDots();
+                if(currentPin.length === 4) {
+                    if(currentPin === ADMIN_PIN) { 
+                        isAdminAuthorized = true; 
+                        document.getElementById('pin-screen').classList.add('hidden'); 
+                        switchView('admin');
+                    } else { 
+                        currentPin = ""; 
+                        setTimeout(() => updatePinDots(), 300); 
+                    }
+                }
+            }
+        }
+        function clearPin() { 
+            currentPin = currentPin.slice(0, -1); 
+            updatePinDots(); 
+        }
+        function updatePinDots() {
+            for(let i=0; i<4; i++) {
+                document.getElementById(`dot-${i}`).classList.toggle('filled', i < currentPin.length);
+            }
+        }
+        function closePinScreen() { 
+            document.getElementById('pin-screen').classList.add('hidden'); 
+            currentPin = ""; 
+            updatePinDots();
+        }
+
         // --- ADMIN UI ---
         function renderAdminDashboard() {
             const container = document.getElementById('admin-orders-container');
             if(!window.ordersList?.length) { 
-                container.innerHTML = `<div class="text-center py-20 opacity-30 uppercase font-black tracking-widest text-[9px]">Sin pedidos entrantes</div>`; 
+                container.innerHTML = `<div class="text-center py-20 opacity-30 uppercase font-black tracking-widest text-[9px]">Sin pedidos registrados</div>`; 
                 return; 
             }
             container.innerHTML = window.ordersList.map(o => `
                 <div class="order-card ${o.status} bg-white p-5 rounded-3xl shadow-sm border border-slate-100 flex flex-col gap-3">
                     <div class="flex justify-between items-start">
                         <div>
-                            <h4 class="font-black text-sm italic uppercase leading-none mb-1">${o.client.name}</h4>
+                            <h4 class="font-black text-sm italic uppercase mb-1">${o.client.name}</h4>
                             <p class="text-[9px] text-slate-400 font-bold">${o.client.phone || 'S/N'}</p>
+                            <p class="text-[8px] text-slate-400 italic">${o.client.address || ''}</p>
                         </div>
                         <span class="text-[7px] font-black px-2 py-1 rounded-lg uppercase ${o.status === 'Pendiente' ? 'bg-red-50 text-red-500' : o.status === 'Preparando' ? 'bg-amber-50 text-amber-500' : 'bg-green-50 text-green-500'}">${o.status}</span>
                     </div>
@@ -395,32 +462,6 @@
             `).join('');
         }
 
-        // --- PIN PAD ---
-        function renderPinPad() {
-            const pad = document.getElementById('numpad');
-            pad.innerHTML = "123456789 0⌫".split('').map(n => `
-                <button onclick="${n === '⌫' ? 'clearPin()' : n === ' ' ? '' : `pressPin('${n}')`}" class="w-16 h-16 rounded-full bg-slate-50 text-xl font-bold btn-press ${n===' ' ? 'opacity-0' : ''}">${n}</button>
-            `).join('');
-        }
-        function pressPin(n) {
-            if(currentPin.length < 4) {
-                currentPin += n;
-                for(let i=0; i<4; i++) document.getElementById(`dot-${i}`).classList.toggle('filled', i < currentPin.length);
-                if(currentPin.length === 4) {
-                    if(currentPin === ADMIN_PIN) { 
-                        window.isAdminAuthorized = true; 
-                        document.getElementById('pin-screen').classList.add('hidden'); 
-                        document.getElementById('admin-view').classList.remove('hidden');
-                        renderAdminDashboard();
-                    } else { 
-                        currentPin = ""; 
-                        setTimeout(()=> { for(let i=0; i<4; i++) document.getElementById(`dot-${i}`).classList.remove('filled'); }, 300); 
-                    }
-                }
-            }
-        }
-        function clearPin() { currentPin = currentPin.slice(0, -1); for(let i=0; i<4; i++) document.getElementById(`dot-${i}`).classList.toggle('filled', i < currentPin.length); }
-
         // --- RENDER MENU ---
         function renderUI() {
             document.getElementById('category-pills').innerHTML = cats.map(c => `
@@ -431,39 +472,45 @@
             loadUserData();
             renderPinPad();
         }
+
         function renderGrid(items) {
             document.getElementById('items-grid').innerHTML = items.map(i => `
                 <div class="bg-white rounded-2xl overflow-hidden card-shadow border border-slate-50 flex flex-col btn-press transition-all" onclick="addToCart(${i.id})">
                     <div class="h-32 relative"><img src="${i.img}" class="w-full h-full object-cover"></div>
                     <div class="p-3 flex-grow flex flex-col">
-                        <h3 class="text-[10px] font-black italic uppercase line-clamp-1">${i.n}</h3>
+                        <h3 class="text-[10px] font-black italic uppercase line-clamp-1 leading-tight mb-1 text-slate-800">${i.n}</h3>
                         <span class="text-amber-600 font-black text-[9px] mt-auto">$${i.p}</span>
                     </div>
                 </div>
             `).join('');
         }
+
         function renderCarousels() {
             document.getElementById('carousel-bestsellers').innerHTML = menuData.filter(i => i.best).map(i => `
                 <div onclick="addToCart(${i.id})" class="snap-start shrink-0 w-40 bg-white rounded-3xl card-shadow border border-slate-50 p-4">
-                    <h4 class="font-black italic text-[10px] uppercase truncate">${i.n}</h4>
+                    <h4 class="font-black italic text-[10px] uppercase truncate text-slate-800">${i.n}</h4>
                     <p class="text-amber-600 font-black text-[8px] mt-1">$${i.p}</p>
                 </div>
             `).join('');
         }
+
         function filter(c) { currentCat = c; renderUI(); }
+
         function addToCart(id) {
             if (cart[id]) cart[id].qty += 1; else cart[id] = { ...menuData.find(i => i.id === id), qty: 1 };
             updateCartUI();
             const wrapper = document.getElementById('cart-icon-wrapper');
             wrapper.classList.add('animate-cart-bounce'); setTimeout(()=>wrapper.classList.remove('animate-cart-bounce'), 500);
         }
+
         function updateCartUI() {
             const arr = Object.values(cart);
             document.getElementById('cart-count').innerText = arr.reduce((acc, i) => acc + i.qty, 0);
             document.getElementById('final-total').innerText = `$${arr.reduce((acc, i) => acc + (i.p * i.qty), 0)}`;
             const c = document.getElementById('cart-items');
-            c.innerHTML = arr.length ? arr.map(i => `<div class="bg-slate-50 p-3 rounded-xl flex justify-between uppercase text-[9px] font-black"><span>${i.qty}x ${i.n}</span><span>$${i.p*i.qty}</span></div>`).join('') : `<p class="text-center py-10 opacity-20 text-[9px] font-black uppercase tracking-widest">Orden vacía</p>`;
+            c.innerHTML = arr.length ? arr.map(i => `<div class="bg-slate-50 p-3 rounded-xl flex justify-between uppercase text-[9px] font-black text-slate-700"><span>${i.qty}x ${i.n}</span><span>$${i.p*i.qty}</span></div>`).join('') : `<p class="text-center py-10 opacity-20 text-[9px] font-black uppercase tracking-widest">Orden vacía</p>`;
         }
+
         function toggleCart() { document.getElementById('cart-modal').classList.toggle('sheet-active'); }
         function openTracking() { document.getElementById('tracking-modal').classList.add('sheet-active'); }
         function closeTracking() { document.getElementById('tracking-modal').classList.remove('sheet-active'); }
