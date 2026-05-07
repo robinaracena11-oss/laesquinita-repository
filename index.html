@@ -15,115 +15,125 @@
         import { getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
-        // Configuración de Firebase
-        const firebaseConfig = JSON.parse(__firebase_config);
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const auth = getAuth(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'la-esquinita-gourmet';
+        // Definimos funciones por defecto para evitar que la aplicación falle ("is not a function") cuando se aloja en WordPress/Vercel
+        window.saveOrderToCloud = async (orderData) => {
+            console.log("Firebase no detectado. Pasando directo a Vercel API y WhatsApp.");
+            return "local-id";
+        };
+        window.updateStatus = async () => {};
+        window.deleteOrder = async () => {};
 
-        window.db = db;
-        window.appId = appId;
+        try {
+            // Solo intentamos iniciar Firebase si las variables de entorno están presentes
+            if (typeof __firebase_config !== 'undefined') {
+                const firebaseConfig = JSON.parse(__firebase_config);
+                const app = initializeApp(firebaseConfig);
+                const db = getFirestore(app);
+                const auth = getAuth(app);
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'la-esquinita-gourmet';
 
-        async function init() {
-            try {
-                window.currentView = 'customer';
-                
-                // Manejo correcto de Autenticación de Firebase para evitar bloqueos
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
+                window.db = db;
+                window.appId = appId;
 
-                // Aseguramos que la orden y los listeners inicien justo después del login exitoso
-                checkActiveOrder();
-                listenToOrders();
+                async function init() {
+                    try {
+                        window.currentView = 'customer';
+                        
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
 
-                onAuthStateChanged(auth, (user) => {
-                    if (user) {
                         checkActiveOrder();
                         listenToOrders();
+
+                        onAuthStateChanged(auth, (user) => {
+                            if (user) {
+                                checkActiveOrder();
+                                listenToOrders();
+                            }
+                        });
+                    } catch (error) {
+                        console.error("Error de inicialización:", error);
                     }
-                });
-            } catch (error) {
-                console.error("Error de inicialización:", error);
-            }
-        }
-        init();
-
-        window.saveOrderToCloud = async (orderData) => {
-            if (!auth.currentUser) {
-                console.error("No autenticado");
-                throw new Error("No se pudo verificar tu conexión con la base de datos.");
-            }
-            const ordersCol = collection(db, 'artifacts', appId, 'public', 'data', 'orders');
-            const docRef = await addDoc(ordersCol, {
-                ...orderData,
-                status: 'Pendiente',
-                createdAt: serverTimestamp()
-            });
-            localStorage.setItem('activeOrderId', docRef.id);
-            listenToCurrentOrder(docRef.id);
-            return docRef.id;
-        };
-
-        function listenToOrders() {
-            if (!auth.currentUser) return;
-            const ordersCol = collection(db, 'artifacts', appId, 'public', 'data', 'orders');
-            onSnapshot(ordersCol, (snapshot) => {
-                const orders = [];
-                snapshot.forEach(doc => orders.push({ id: doc.id, ...doc.data() }));
-                // Ordenar por fecha (el más reciente arriba)
-                orders.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-                window.ordersList = orders;
-                if (window.currentView === 'admin' && typeof renderAdminDashboard === 'function') {
-                    renderAdminDashboard();
                 }
-            }, (err) => console.error("Error escuchando órdenes en tiempo real:", err));
-        }
+                init();
 
-        function listenToCurrentOrder(orderId) {
-            if (!auth.currentUser) return;
-            const orderDoc = doc(db, 'artifacts', appId, 'public', 'data', 'orders', orderId);
-            onSnapshot(orderDoc, (snapshot) => {
-                if (snapshot.exists()) {
-                    window.currentOrder = { id: snapshot.id, ...snapshot.data() };
-                    if (typeof updateStatusUI === 'function') updateStatusUI();
-                } else {
-                    localStorage.removeItem('activeOrderId');
-                    window.currentOrder = null;
-                    if (typeof updateStatusUI === 'function') updateStatusUI();
+                window.saveOrderToCloud = async (orderData) => {
+                    if (!auth.currentUser) throw new Error("No autenticado");
+                    const ordersCol = collection(db, 'artifacts', appId, 'public', 'data', 'orders');
+                    const docRef = await addDoc(ordersCol, {
+                        ...orderData,
+                        status: 'Pendiente',
+                        createdAt: serverTimestamp()
+                    });
+                    localStorage.setItem('activeOrderId', docRef.id);
+                    listenToCurrentOrder(docRef.id);
+                    return docRef.id;
+                };
+
+                function listenToOrders() {
+                    if (!auth.currentUser) return;
+                    const ordersCol = collection(db, 'artifacts', appId, 'public', 'data', 'orders');
+                    onSnapshot(ordersCol, (snapshot) => {
+                        const orders = [];
+                        snapshot.forEach(doc => orders.push({ id: doc.id, ...doc.data() }));
+                        orders.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+                        window.ordersList = orders;
+                        if (window.currentView === 'admin' && typeof renderAdminDashboard === 'function') {
+                            renderAdminDashboard();
+                        }
+                    }, (err) => console.error("Error escuchando órdenes:", err));
                 }
-            });
-        }
 
-        function checkActiveOrder() {
-            const activeId = localStorage.getItem('activeOrderId');
-            if (activeId) listenToCurrentOrder(activeId);
-        }
-
-        window.updateStatus = async (orderId, newStatus) => {
-            if (!auth.currentUser) return;
-            try {
-                const orderDoc = doc(db, 'artifacts', appId, 'public', 'data', 'orders', orderId);
-                await updateDoc(orderDoc, { status: newStatus });
-            } catch (e) {
-                console.error("Error al actualizar estatus", e);
-            }
-        };
-
-        window.deleteOrder = async (orderId) => {
-            if (!auth.currentUser) return;
-            if(confirm("¿Deseas eliminar este registro permanentemente?")) {
-                try {
+                function listenToCurrentOrder(orderId) {
+                    if (!auth.currentUser) return;
                     const orderDoc = doc(db, 'artifacts', appId, 'public', 'data', 'orders', orderId);
-                    await deleteDoc(orderDoc);
-                } catch (e) {
-                    console.error("Error al eliminar", e);
+                    onSnapshot(orderDoc, (snapshot) => {
+                        if (snapshot.exists()) {
+                            window.currentOrder = { id: snapshot.id, ...snapshot.data() };
+                            if (typeof updateStatusUI === 'function') updateStatusUI();
+                        } else {
+                            localStorage.removeItem('activeOrderId');
+                            window.currentOrder = null;
+                            if (typeof updateStatusUI === 'function') updateStatusUI();
+                        }
+                    });
                 }
+
+                function checkActiveOrder() {
+                    const activeId = localStorage.getItem('activeOrderId');
+                    if (activeId) listenToCurrentOrder(activeId);
+                }
+
+                window.updateStatus = async (orderId, newStatus) => {
+                    if (!auth.currentUser) return;
+                    try {
+                        const orderDoc = doc(db, 'artifacts', appId, 'public', 'data', 'orders', orderId);
+                        await updateDoc(orderDoc, { status: newStatus });
+                    } catch (e) {
+                        console.error("Error al actualizar estatus", e);
+                    }
+                };
+
+                window.deleteOrder = async (orderId) => {
+                    if (!auth.currentUser) return;
+                    if(confirm("¿Deseas eliminar este registro permanentemente?")) {
+                        try {
+                            const orderDoc = doc(db, 'artifacts', appId, 'public', 'data', 'orders', orderId);
+                            await deleteDoc(orderDoc);
+                        } catch (e) {
+                            console.error("Error al eliminar", e);
+                        }
+                    }
+                };
+            } else {
+                console.warn("Base de datos en la nube omitida: Se enviará el pedido a la API de Vercel y WhatsApp.");
             }
-        };
+        } catch (error) {
+            console.error("Excepción en el módulo:", error);
+        }
     </script>
 
     <style>
