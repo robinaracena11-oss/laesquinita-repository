@@ -24,7 +24,6 @@
 
         window.db = db;
         window.appId = appId;
-        window.currentUser = null;
 
         async function init() {
             try {
@@ -37,9 +36,12 @@
                     await signInAnonymously(auth);
                 }
 
+                // Aseguramos que la orden y los listeners inicien justo después del login exitoso
+                checkActiveOrder();
+                listenToOrders();
+
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
-                        window.currentUser = user;
                         checkActiveOrder();
                         listenToOrders();
                     }
@@ -51,9 +53,9 @@
         init();
 
         window.saveOrderToCloud = async (orderData) => {
-            if (!window.currentUser) {
+            if (!auth.currentUser) {
                 console.error("No autenticado");
-                throw new Error("Sin permisos de autenticación");
+                throw new Error("No se pudo verificar tu conexión con la base de datos.");
             }
             const ordersCol = collection(db, 'artifacts', appId, 'public', 'data', 'orders');
             const docRef = await addDoc(ordersCol, {
@@ -67,7 +69,7 @@
         };
 
         function listenToOrders() {
-            if (!window.currentUser) return;
+            if (!auth.currentUser) return;
             const ordersCol = collection(db, 'artifacts', appId, 'public', 'data', 'orders');
             onSnapshot(ordersCol, (snapshot) => {
                 const orders = [];
@@ -82,7 +84,7 @@
         }
 
         function listenToCurrentOrder(orderId) {
-            if (!window.currentUser) return;
+            if (!auth.currentUser) return;
             const orderDoc = doc(db, 'artifacts', appId, 'public', 'data', 'orders', orderId);
             onSnapshot(orderDoc, (snapshot) => {
                 if (snapshot.exists()) {
@@ -102,7 +104,7 @@
         }
 
         window.updateStatus = async (orderId, newStatus) => {
-            if (!window.currentUser) return;
+            if (!auth.currentUser) return;
             try {
                 const orderDoc = doc(db, 'artifacts', appId, 'public', 'data', 'orders', orderId);
                 await updateDoc(orderDoc, { status: newStatus });
@@ -112,7 +114,7 @@
         };
 
         window.deleteOrder = async (orderId) => {
-            if (!window.currentUser) return;
+            if (!auth.currentUser) return;
             if(confirm("¿Deseas eliminar este registro permanentemente?")) {
                 try {
                     const orderDoc = doc(db, 'artifacts', appId, 'public', 'data', 'orders', orderId);
@@ -377,18 +379,46 @@
 
             try {
                 const total = arr.reduce((acc, i) => acc + (i.p * i.qty), 0);
+                
+                // Mapear los items para garantizar que no existan campos extraños o indefinidos que bloqueen Firebase
+                const safeItems = arr.map(item => ({
+                    id: item.id,
+                    n: item.n,
+                    p: item.p,
+                    qty: item.qty,
+                    note: item.note || ""
+                }));
+
                 const orderData = { 
                     client: { 
                         name, 
-                        phone: document.getElementById('user-phone').value, 
-                        address: document.getElementById('user-address').value 
+                        phone: document.getElementById('user-phone').value || "No especificado", 
+                        address: document.getElementById('user-address').value || "No especificada" 
                     }, 
-                    items: arr, total, type: "delivery" 
+                    items: safeItems, 
+                    total, 
+                    type: "delivery" 
                 };
 
                 // Esto envía el pedido al panel de control (Base de datos Firebase)
                 await window.saveOrderToCloud(orderData);
                 
+                // --- NUEVO: Enviar datos a tu API de Vercel ---
+                try {
+                    await fetch('/api/guardar', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(orderData)
+                    });
+                    console.log("Pedido enviado exitosamente a la API de Vercel.");
+                } catch (apiError) {
+                    console.error("No se pudo conectar con la API de Vercel (/api/guardar):", apiError);
+                    // Capturamos el error sin interrumpir el proceso para que WhatsApp se abra igualmente
+                }
+                // ----------------------------------------------
+
                 // Luego abre el WhatsApp para confirmar directamente con el cliente
                 let msg = `*NUEVO PEDIDO: LA ESQUINITA*%0A👤: ${name.toUpperCase()}%0A💰 TOTAL: $${total}`;
                 window.open(`https://wa.me/18297847674?text=${msg}`);
@@ -398,7 +428,7 @@
                 toggleCart(); 
                 openTracking();
             } catch(error) {
-                alert("Hubo un problema al enviar la orden. Asegúrate de tener buena conexión.");
+                alert("Hubo un problema al enviar la orden: " + error.message);
                 console.error("Error validando y subiendo el pedido: ", error);
             } finally {
                 btn.innerText = "Realizar Pedido";
