@@ -13,9 +13,9 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
-        // Firebase Config
+        // Configuración de Firebase
         const firebaseConfig = JSON.parse(__firebase_config);
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
@@ -24,17 +24,26 @@
 
         window.db = db;
         window.appId = appId;
+        window.currentUser = null;
 
         async function init() {
             try {
-                // Establecer vista por defecto
                 window.currentView = 'customer';
                 
-                // Iniciar autenticación en segundo plano sin ocultar el menú
-                await signInAnonymously(auth);
-                
-                checkActiveOrder();
-                listenToOrders();
+                // Manejo correcto de Autenticación de Firebase para evitar bloqueos
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        window.currentUser = user;
+                        checkActiveOrder();
+                        listenToOrders();
+                    }
+                });
             } catch (error) {
                 console.error("Error de inicialización:", error);
             }
@@ -42,6 +51,10 @@
         init();
 
         window.saveOrderToCloud = async (orderData) => {
+            if (!window.currentUser) {
+                console.error("No autenticado");
+                throw new Error("Sin permisos de autenticación");
+            }
             const ordersCol = collection(db, 'artifacts', appId, 'public', 'data', 'orders');
             const docRef = await addDoc(ordersCol, {
                 ...orderData,
@@ -54,27 +67,31 @@
         };
 
         function listenToOrders() {
+            if (!window.currentUser) return;
             const ordersCol = collection(db, 'artifacts', appId, 'public', 'data', 'orders');
             onSnapshot(ordersCol, (snapshot) => {
                 const orders = [];
                 snapshot.forEach(doc => orders.push({ id: doc.id, ...doc.data() }));
-                // Ordenar por fecha
+                // Ordenar por fecha (el más reciente arriba)
                 orders.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
                 window.ordersList = orders;
-                if (window.currentView === 'admin') renderAdminDashboard();
-            }, (err) => console.error("Error en tiempo real:", err));
+                if (window.currentView === 'admin' && typeof renderAdminDashboard === 'function') {
+                    renderAdminDashboard();
+                }
+            }, (err) => console.error("Error escuchando órdenes en tiempo real:", err));
         }
 
         function listenToCurrentOrder(orderId) {
+            if (!window.currentUser) return;
             const orderDoc = doc(db, 'artifacts', appId, 'public', 'data', 'orders', orderId);
             onSnapshot(orderDoc, (snapshot) => {
                 if (snapshot.exists()) {
                     window.currentOrder = { id: snapshot.id, ...snapshot.data() };
-                    updateStatusUI();
+                    if (typeof updateStatusUI === 'function') updateStatusUI();
                 } else {
                     localStorage.removeItem('activeOrderId');
                     window.currentOrder = null;
-                    updateStatusUI();
+                    if (typeof updateStatusUI === 'function') updateStatusUI();
                 }
             });
         }
@@ -85,14 +102,24 @@
         }
 
         window.updateStatus = async (orderId, newStatus) => {
-            const orderDoc = doc(db, 'artifacts', appId, 'public', 'data', 'orders', orderId);
-            await updateDoc(orderDoc, { status: newStatus });
+            if (!window.currentUser) return;
+            try {
+                const orderDoc = doc(db, 'artifacts', appId, 'public', 'data', 'orders', orderId);
+                await updateDoc(orderDoc, { status: newStatus });
+            } catch (e) {
+                console.error("Error al actualizar estatus", e);
+            }
         };
 
         window.deleteOrder = async (orderId) => {
+            if (!window.currentUser) return;
             if(confirm("¿Deseas eliminar este registro permanentemente?")) {
-                const orderDoc = doc(db, 'artifacts', appId, 'public', 'data', 'orders', orderId);
-                await deleteDoc(orderDoc);
+                try {
+                    const orderDoc = doc(db, 'artifacts', appId, 'public', 'data', 'orders', orderId);
+                    await deleteDoc(orderDoc);
+                } catch (e) {
+                    console.error("Error al eliminar", e);
+                }
             }
         };
     </script>
@@ -140,7 +167,7 @@
 
         /* Progress Stepper */
         .step-line { position: absolute; left: 16px; top: 0; bottom: 0; width: 2px; background: #f1f5f9; z-index: 0; }
-        .step-circle { width: 34px; height: 34px; border-radius: 50%; display: flex; items-center: center; justify-content: center; z-index: 10; position: relative; transition: all 0.5s; font-size: 14px; background: #f1f5f9; color: #94a3b8; }
+        .step-circle { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; z-index: 10; position: relative; transition: all 0.5s; font-size: 14px; background: #f1f5f9; color: #94a3b8; }
         .step-circle.active { background: var(--brand-amber); color: white; box-shadow: 0 0 15px rgba(217, 119, 6, 0.3); }
         .step-circle.done { background: #10b981; color: white; }
 
@@ -159,7 +186,7 @@
 <body class="antialiased">
 
     <!-- VISTA CLIENTE -->
-    <div id="customer-view" class="app-container">
+    <div id="customer-view" class="app-container hidden">
         <!-- Banner de Seguimiento -->
         <div id="order-tracking-banner" class="hidden mx-5 mb-4 p-4 bg-slate-900 rounded-[1.5rem] flex items-center justify-between shadow-xl btn-press" onclick="openTracking()">
             <div class="flex items-center gap-3">
@@ -169,7 +196,7 @@
                     <p class="text-slate-400 text-[8px] font-bold">Ver el progreso en tiempo real</p>
                 </div>
             </div>
-            <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"></path></svg>
+            <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
         </div>
 
         <header class="px-5 mb-6 flex justify-between items-center">
@@ -213,18 +240,18 @@
     <!-- BARRA NAVEGACIÓN -->
     <nav class="tab-bar" id="main-tabs">
         <button onclick="switchView('customer')" class="tab-item active" id="tab-home">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
             <span class="text-[8px] font-bold uppercase">Inicio</span>
         </button>
         <button onclick="toggleCart()" class="tab-item relative" id="tab-cart">
             <div id="cart-icon-wrapper" class="flex flex-col items-center gap-1 transition-transform">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
                 <span id="cart-count" class="absolute -top-1 -right-1 bg-amber-600 text-white text-[7px] font-black h-3.5 w-3.5 flex items-center justify-center rounded-full shadow-sm">0</span>
                 <span class="text-[8px] font-bold uppercase">Orden</span>
             </div>
         </button>
         <button onclick="tryAdminAccess()" class="tab-item" id="tab-admin">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path></svg>
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path></svg>
             <span class="text-[8px] font-bold uppercase">Admin</span>
         </button>
     </nav>
@@ -263,7 +290,7 @@
             </div>
             <div class="p-6 border-t bg-white rounded-t-[2rem] pb-safe shadow-xl">
                 <div class="flex justify-between items-center mb-4"><span id="final-total" class="text-2xl font-black text-slate-900">$0</span></div>
-                <button onclick="validateAndSubmit()" class="w-full bg-slate-900 text-white py-4 rounded-2xl font-black uppercase text-[11px] shadow-lg btn-press">Realizar Pedido</button>
+                <button id="btn-submit-order" onclick="validateAndSubmit()" class="w-full bg-slate-900 text-white py-4 rounded-2xl font-black uppercase text-[11px] shadow-lg btn-press">Realizar Pedido</button>
             </div>
         </div>
     </div>
@@ -339,28 +366,44 @@
 
         async function validateAndSubmit() {
             const name = document.getElementById('user-name').value;
-            if (!name) return alert("Por favor, ingresa tu nombre.");
+            if (!name) return alert("Por favor, ingresa tu nombre antes de pedir.");
+            
             const arr = Object.values(cart);
-            if (!arr.length) return;
+            if (!arr.length) return alert("Tu carrito está vacío. Agrega algo delicioso primero.");
             
-            const total = arr.reduce((acc, i) => acc + (i.p * i.qty), 0);
-            const orderData = { 
-                client: { 
-                    name, 
-                    phone: document.getElementById('user-phone').value, 
-                    address: document.getElementById('user-address').value 
-                }, 
-                items: arr, total, type: "delivery" 
-            };
+            const btn = document.getElementById('btn-submit-order');
+            btn.innerText = "PROCESANDO...";
+            btn.disabled = true;
 
-            await window.saveOrderToCloud(orderData);
-            let msg = `*NUEVO PEDIDO: LA ESQUINITA*%0A👤: ${name.toUpperCase()}%0A💰 TOTAL: $${total}`;
-            window.open(`https://wa.me/18297847674?text=${msg}`);
-            
-            cart = {}; 
-            updateCartUI(); 
-            toggleCart(); 
-            openTracking();
+            try {
+                const total = arr.reduce((acc, i) => acc + (i.p * i.qty), 0);
+                const orderData = { 
+                    client: { 
+                        name, 
+                        phone: document.getElementById('user-phone').value, 
+                        address: document.getElementById('user-address').value 
+                    }, 
+                    items: arr, total, type: "delivery" 
+                };
+
+                // Esto envía el pedido al panel de control (Base de datos Firebase)
+                await window.saveOrderToCloud(orderData);
+                
+                // Luego abre el WhatsApp para confirmar directamente con el cliente
+                let msg = `*NUEVO PEDIDO: LA ESQUINITA*%0A👤: ${name.toUpperCase()}%0A💰 TOTAL: $${total}`;
+                window.open(`https://wa.me/18297847674?text=${msg}`);
+                
+                cart = {}; 
+                updateCartUI(); 
+                toggleCart(); 
+                openTracking();
+            } catch(error) {
+                alert("Hubo un problema al enviar la orden. Asegúrate de tener buena conexión.");
+                console.error("Error validando y subiendo el pedido: ", error);
+            } finally {
+                btn.innerText = "Realizar Pedido";
+                btn.disabled = false;
+            }
         }
 
         // --- NAVEGACIÓN Y VISTAS ---
