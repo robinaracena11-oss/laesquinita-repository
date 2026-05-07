@@ -27,13 +27,12 @@
 
         async function init() {
             try {
+                // Establecer vista por defecto
+                window.currentView = 'customer';
+                
+                // Iniciar autenticación en segundo plano sin ocultar el menú
                 await signInAnonymously(auth);
                 
-                // Mostrar vista de cliente por defecto
-                window.currentView = 'customer';
-                document.getElementById('customer-view').classList.remove('hidden');
-                
-                renderUI();
                 checkActiveOrder();
                 listenToOrders();
             } catch (error) {
@@ -160,7 +159,7 @@
 <body class="antialiased">
 
     <!-- VISTA CLIENTE -->
-    <div id="customer-view" class="app-container hidden">
+    <div id="customer-view" class="app-container">
         <!-- Banner de Seguimiento -->
         <div id="order-tracking-banner" class="hidden mx-5 mb-4 p-4 bg-slate-900 rounded-[1.5rem] flex items-center justify-between shadow-xl btn-press" onclick="openTracking()">
             <div class="flex items-center gap-3">
