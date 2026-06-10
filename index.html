@@ -1,44 +1,4 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>La Esquinita | Gourmet App</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Playfair+Display:wght@700;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-    
-    <style>
-        :root {
-            --brand-amber: #d97706;
-            --brand-dark: #0f172a;
-            --safe-top: env(safe-area-inset-top);
-            --safe-bottom: env(safe-area-inset-bottom);
-        }
-        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #fcfcfc; -webkit-tap-highlight-color: transparent; user-select: none; }
-        h1, h2, h3 { font-family: 'Playfair Display', serif; }
-        .mono { font-family: 'JetBrains Mono', monospace; }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        
-        .app-container { padding-top: calc(1rem + var(--safe-top)); padding-bottom: calc(5rem + var(--safe-bottom)); }
-        
-        .tab-bar {
-            position: fixed; bottom: 0; left: 0; right: 0;
-            height: calc(4.5rem + var(--safe-bottom));
-            background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(20px);
-            border-top: 1px solid rgba(0,0,0,0.05); padding-bottom: var(--safe-bottom);
-            display: flex; justify-content: space-around; align-items: center; z-index: 100;
-        }
 
-        .tab-item { display: flex; flex-direction: column; align-items: center; gap: 4px; color: #94a3b8; transition: all 0.2s; background: none; border: none; }
-        .tab-item.active { color: var(--brand-amber); }
-
-        .sheet { position: fixed; inset: 0; z-index: 200; visibility: hidden; pointer-events: none; }
-        .sheet-active { visibility: visible; pointer-events: auto; }
-        .sheet-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.5); opacity: 0; transition: opacity 0.4s ease; }
-        .sheet-content {
-            position: absolute; bottom: 0; left: 0; right: 0;
             background: white; border-radius: 2.5rem 2.5rem 0 0;
             height: 94%; transform: translateY(100%);
             transition: transform 0.4s cubic-bezier(0.32, 0.72, 0, 1);
@@ -46,26 +6,6 @@
         }
         .sheet-active .sheet-overlay { opacity: 1; }
         .sheet-active .sheet-content { transform: translateY(0); }
-
-        .btn-press:active { transform: scale(0.95); }
-        .card-shadow { box-shadow: 0 4px 20px -5px rgba(15, 23, 42, 0.05); }
-
-        /* Progress Stepper */
-        .step-line { position: absolute; left: 16px; top: 0; bottom: 0; width: 2px; background: #f1f5f9; z-index: 0; }
-        .step-circle { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; z-index: 10; position: relative; transition: all 0.5s; font-size: 14px; background: #f1f5f9; color: #94a3b8; }
-        .step-circle.active { background: var(--brand-amber); color: white; box-shadow: 0 0 15px rgba(217, 119, 6, 0.3); }
-        .step-circle.done { background: #10b981; color: white; }
-
-        .order-card { border-left: 4px solid #e2e8f0; transition: all 0.3s; }
-        .order-card.Pendiente { border-left-color: #ef4444; }
-        .order-card.Preparando { border-left-color: #f59e0b; }
-        .order-card.Listo { border-left-color: #10b981; }
-
-        .user-input { width: 100%; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 1rem; padding: 0.75rem 1rem; font-size: 13px; font-weight: 600; outline: none; transition: border 0.2s; }
-        .user-input:focus { border-color: var(--brand-amber); }
-
-        .pin-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #e2e8f0; transition: all 0.2s; }
-        .pin-dot.filled { background: var(--brand-amber); border-color: var(--brand-amber); transform: scale(1.2); }
 
         /* Custom Notificaciones */
         #toast-container { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 9999; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
